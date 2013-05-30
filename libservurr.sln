@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libservurr", "libservurr\libservurr.vcxproj", "{37D589E6-6D46-4EE1-A10D-83481DBA5627}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{BF6F1127-11C8-4557-B270-E0E59EB14995}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{37D589E6-6D46-4EE1-A10D-83481DBA5627}.Debug|Win32.ActiveCfg = Debug|Win32
+		{37D589E6-6D46-4EE1-A10D-83481DBA5627}.Debug|Win32.Build.0 = Debug|Win32
+		{37D589E6-6D46-4EE1-A10D-83481DBA5627}.Release|Win32.ActiveCfg = Release|Win32
+		{37D589E6-6D46-4EE1-A10D-83481DBA5627}.Release|Win32.Build.0 = Release|Win32
+		{BF6F1127-11C8-4557-B270-E0E59EB14995}.Debug|Win32.ActiveCfg = Debug|Win32
+		{BF6F1127-11C8-4557-B270-E0E59EB14995}.Debug|Win32.Build.0 = Debug|Win32
+		{BF6F1127-11C8-4557-B270-E0E59EB14995}.Release|Win32.ActiveCfg = Release|Win32
+		{BF6F1127-11C8-4557-B270-E0E59EB14995}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
