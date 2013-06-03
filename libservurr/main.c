@@ -21,20 +21,18 @@ typedef struct {
 	char * data;
 } file_t;
 
-#define header "HTTP/1.1 200 OK\nContent-Type: text/html; charset=utf-8\n\n"
-#define headerCSS "HTTP/1.1 200 OK\nContent-Type: text/css\n\n"
-#define headerJSON "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n\n"
-#define headerJPEG "HTTP/1.1 200 OK\nContent-Type: image/jpeg\n\n"
-#define headerPNG "HTTP/1.1 200 OK\nContent-Type: image/png\n\n"
-#define headerJS "HTTP/1.1 200 OK\nContent-Type: text/javascript\n\n"
-#define headerWOFF "HTTP/1.1 200 OK\nContent-Type: application/font-woff\n\n"
-#define headerPlain "HTTP/1.1 200 OK\nContent-Type: text/plain; charset=utf-8\n\n"
+typedef struct {
+	void * data;
+	ev_cb cb;
+} vurr_event_data_t;
 
 #define MAXPENDING 128
 
 static uv_loop_t * loop;
+static uv_async_t async;
 static void * routes = NULL;
 static void * files = NULL;
+static void * events = NULL;
 
 void map_set(void ** map, char * key, void * val) {
 	PWord_t v;
@@ -87,12 +85,12 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 		return;
 	}
 	
-	request = u_parseHttpRequest(buf.base);
+	request = parse_http_request(buf.base);
 
-	if (u_equal(request.method, "GET")) {
+	if (equal(request.method, "GET")) {
 		file_t * file;
 
-		if (u_equal(request.url, "/")) {
+		if (equal(request.url, "/")) {
 			if (file = (file_t *)map_get(files, "index.html")) {
 				req->buf.base = file->data;
 				req->buf.len = file->len;
@@ -117,6 +115,7 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 			res->handle = client;
 			res->method = request.method;
 			res->url = request.url;
+			res->query = request.query;
 
 			if (cb) {
 				cb(res);
@@ -189,6 +188,15 @@ static void handle_request(uv_stream_t * server, int status) {
 	}
 }
 
+static void on_event(uv_async_t * async, int status) {
+	vurr_event_data_t * event_data = (vurr_event_data_t *)async->data;
+	vurr_event_t * ev = (vurr_event_t *)malloc(sizeof(*ev));
+	ev->data = event_data->data;
+	event_data->cb(ev);
+	free(event_data);
+	free(ev);
+}
+
 static int build_file(file_t * fileinfo, char * head, size_t file_size) {
 	fileinfo->len = sizeof(char) * strlen(head) + file_size;
 	fileinfo->data = (char *)malloc(fileinfo->len);
@@ -208,7 +216,7 @@ void vurr_static(char * path) {
 	size_t len;
 	list dir_files;
 
-	dir_files = u_ls(path);
+	dir_files = ls(path);
 	printf("%d files:\n", dir_files.len);
 	for (i = 0; i < dir_files.len; i++) {
 		file_t * fileinfo = (file_t *)malloc(sizeof(file_t));
@@ -216,26 +224,26 @@ void vurr_static(char * path) {
 
 		printf("%s\n", dir_files.items[i]);
 		
-		file = u_readFileS(dir_files.items[i], &file_size);
-		filename = u_withoutPath(dir_files.items[i]);
+		file = readfile_size(dir_files.items[i], &file_size);
+		filename = without_path(dir_files.items[i]);
 		len = strlen(filename);
 		
-		if (u_endsWith(filename, ".html")) {
+		if (ends_with(filename, ".html")) {
 			offset = build_file(fileinfo, header, file_size);
 		}
-		else if (u_endsWith(filename, ".css")) {
+		else if (ends_with(filename, ".css")) {
 			offset = build_file(fileinfo, headerCSS, file_size);
 		}
-		else if (u_endsWith(filename, ".js")) {
+		else if (ends_with(filename, ".js")) {
 			offset = build_file(fileinfo, headerJS, file_size);
 		}
-		else if (u_endsWith(filename, ".png")) {
+		else if (ends_with(filename, ".png")) {
 			offset = build_file(fileinfo, headerPNG, file_size);
 		}
-		else if (u_endsWith(filename, ".jpg")) {
+		else if (ends_with(filename, ".jpg")) {
 			offset = build_file(fileinfo, headerJPEG, file_size);
 		}
-		else if (u_endsWith(filename, ".woff")) {
+		else if (ends_with(filename, ".woff")) {
 			offset = build_file(fileinfo, headerWOFF, file_size);
 		}
 		else {
@@ -250,21 +258,41 @@ void vurr_static(char * path) {
 }
 
 void vurr_write(vurr_res_t * res) {
-	write_req_t * req = (write_req_t *)malloc(sizeof(write_req_t));
+	if (res->data) {
+		write_req_t * req = (write_req_t *)malloc(sizeof(write_req_t));
 	
-	req->req.handle = (uv_stream_t *)res->handle;
-	req->buf.base = res->data;
-	req->buf.len = res->len;
-	req->free = TRUE;
+		req->req.handle = (uv_stream_t *)res->handle;
+		req->buf.base = res->data;
+		req->buf.len = res->len;
+		req->free = TRUE;
 
-	free(res->method);
-	free(res);
+		free(res->method);
+		free(res);
 
-	uv_write((uv_write_t *)req, req->req.handle, &req->buf, 1, write_done);
+		uv_write((uv_write_t *)req, req->req.handle, &req->buf, 1, write_done);
+	}
+	else {
+		uv_close((uv_handle_t *)res->handle, NULL);
+	}
 }
 
 void vurr_get(char * url, req_cb cb) {
 	map_set(&routes, url, cb);
+}
+
+void vurr_on(char * e, ev_cb cb) {
+	map_set(&events, e, cb);
+}
+
+void vurr_do(char * e, void * data) {
+	ev_cb cb = (ev_cb)map_get(events, e);
+	if (cb) {
+		vurr_event_data_t * event_data = (vurr_event_data_t *)malloc(sizeof(*event_data));
+		event_data->cb = cb;
+		event_data->data = data;
+		async.data = event_data;
+		uv_async_send(&async);
+	}
 }
 
 void vurr_run(int port) {
@@ -277,6 +305,8 @@ void vurr_run(int port) {
 	bind_addr = uv_ip4_addr("0.0.0.0", port);
 	uv_tcp_bind(&server, bind_addr);
 	uv_listen((uv_stream_t *)&server, MAXPENDING, handle_request);
+
+	uv_async_init(loop, &async, on_event);
 
 	uv_run(loop, UV_RUN_DEFAULT);
 }

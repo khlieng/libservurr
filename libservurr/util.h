@@ -12,14 +12,14 @@ typedef struct {
 	char * query;
 } http_req_t;
 
-char * u_readFile(char * filename);
-char * u_readFileS(char * filename, int * size_out);
-int u_startsWith(char * haystack, char * needle);
-list u_ls(const char * dir);
-void u_freelist(list l);
-int u_endsWith(char * haystack, char * needle);
-char * u_withoutPath(char * filename);
-http_req_t u_parseHttpRequest(char * request);
-int u_equal(char * l, char * r);
+char * readfile(char * filename);
+char * readfile_size(char * filename, int * size_out);
+int starts_with(char * haystack, char * needle);
+list ls(const char * dir);
+void freelist(list l);
+int ends_with(char * haystack, char * needle);
+char * without_path(char * filename);
+http_req_t parse_http_request(char * request);
+int equal(char * l, char * r);
 
 #endif

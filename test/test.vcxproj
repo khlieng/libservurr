@@ -37,8 +37,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LibraryPath>C:\Users\Ken-Håvard\Documents\Visual Studio 2010\Projects\libservurr\lib;C:\Users\Ken-Håvard\Documents\Visual Studio 2010\Projects\libservurr\Release;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Users\Ken-Håvard\Documents\Visual Studio 2010\Projects\libservurr\libservurr;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\dev\libservurr\lib;C:\dev\libservurr\Release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\dev\libservurr\libservurr;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

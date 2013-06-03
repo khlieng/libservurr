@@ -5,7 +5,7 @@
 
 #include "util.h"
 
-char * u_readFile(char * filename) {
+char * readfile(char * filename) {
     FILE * file;
     long size;
     char * buffer;
@@ -26,7 +26,7 @@ char * u_readFile(char * filename) {
     return buffer;
 }
 
-char * u_readFileS(char * filename, int * size_out) {
+char * readfile_size(char * filename, int * size_out) {
     FILE * file;
     long size;
     char * buffer;
@@ -48,11 +48,11 @@ char * u_readFileS(char * filename, int * size_out) {
     return buffer;
 }
 
-int u_startsWith(char * haystack, char * needle) {
+int starts_with(char * haystack, char * needle) {
 	return strncmp(haystack, needle, strlen(needle)) == 0;
 }
 
-int u_endsWith(char * haystack, char * needle) {
+int ends_with(char * haystack, char * needle) {
 	char * end = strstr(haystack, needle);
 	if (end) {
 		return (strlen(haystack) - (end - haystack)) == strlen(needle);
@@ -61,7 +61,7 @@ int u_endsWith(char * haystack, char * needle) {
 }
 
 #ifdef WIN32
-list u_ls(const char * dir) {
+list ls(const char * dir) {
 	int c = 0, i = 0;
 	WIN32_FIND_DATA fdFile;
 	HANDLE hFind = NULL;
@@ -116,7 +116,7 @@ list u_ls(const char * dir) {
 }
 #endif
 
-void u_freelist(list l) {
+void freelist(list l) {
 	int i;
 	for (i = 0; i < l.len; i++) {
 		printf("Freeing %d\n", i);
@@ -125,7 +125,7 @@ void u_freelist(list l) {
 	free(l.items);
 }
 
-char * u_withoutPath(char * filename) {
+char * without_path(char * filename) {
 	char * result = NULL;
 	char * last = strchr(filename, '\\');
 	while (last != NULL) {
@@ -135,7 +135,7 @@ char * u_withoutPath(char * filename) {
 	return result;
 }
 
-http_req_t u_parseHttpRequest(char * head) {
+http_req_t parse_http_request(char * head) {
 	char * copy = strdup(head);
 
 	http_req_t request;
@@ -147,6 +147,6 @@ http_req_t u_parseHttpRequest(char * head) {
 	return request;
 }
 
-int u_equal(char * l, char * r) {
+int equal(char * l, char * r) {
 	return strcmp(l, r) == 0;
 }
