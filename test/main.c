@@ -6,13 +6,20 @@
 
 #pragma comment(lib, "libservurr.lib")
 
-void arne(vurr_res_t * res) {
+void lefse(vurr_req_t * req, vurr_res_t * res) {
+	res->data = "<h1>Lefse</h1>";
+	vurr_res_set(res, "Content-Type", "text/html");
+}
+
+void arne(vurr_req_t * req, vurr_res_t * res) {
 	res->data = (char *)malloc(5);
 	res->len = 5;
 	strcpy(res->data, "Arne!");
+	
+	vurr_res_set(res, "Content-Type", "text/html");
 }
 
-void bjarne(vurr_res_t * res) {
+void bjarne(vurr_req_t * req, vurr_res_t * res) {
 	res->data = (char *)malloc(7);
 	res->len = 7;
 	res->defer = 1;
@@ -21,8 +28,18 @@ void bjarne(vurr_res_t * res) {
 	vurr_write(res);
 }
 
+void on_file(vurr_event_t * ev) {
+	puts((char *)ev->data);
+}
+
 void main(int argc, char * argv[]) {
 	vurr_get("/arne", arne);
 	vurr_get("/bjarne", bjarne);
-	vurr_run(1881);
+	vurr_get("/lefse", lefse);
+	
+	vurr_static("data");
+	
+	vurr_on("file", on_file);
+
+	vurr_run(80);
 }

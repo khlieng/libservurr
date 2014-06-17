@@ -1,5 +1,5 @@
 #include <uv.h>
-#include <Judy.h>
+#include <stdio.h>
 
 #include "libservurr.h"
 #include "util.h"
@@ -19,6 +19,7 @@ typedef struct {
 typedef struct {
 	int len;
 	char * data;
+	char mime_type[256];
 } file_t;
 
 typedef struct {
@@ -34,36 +35,18 @@ static void * routes = NULL;
 static void * files = NULL;
 static void * events = NULL;
 
-void map_set(void ** map, char * key, void * val) {
-	PWord_t v;
-	JSLI(v, *map, key);
-	*v = (int)val;
-}
-
-void * map_get(void * map, char * key) {
-	PWord_t v;
-	JSLG(v, map, key);
-	if (v) {
-		return (void *)*v;
-	}
-	return NULL;
-}
-
-void * map_new() {
-	return NULL;
-}
-
 static uv_buf_t alloc_buffer(uv_handle_t * handle, size_t suggested_size) {
 	return uv_buf_init((char *)calloc(1, suggested_size), suggested_size);
 }
 
 static void on_close(uv_handle_t * handle) {
+	puts("handle closed\n");
 	free(handle);
 }
 
 static void write_done(uv_write_t * req, int status) {
 	write_req_t * wr = (write_req_t *)req;
-
+	puts("write_done");
 	uv_close((uv_handle_t *)req->handle, on_close);
 
 	if (wr->buf.base != NULL && wr->free) {
@@ -74,10 +57,13 @@ static void write_done(uv_write_t * req, int status) {
 
 static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 	write_req_t * req = (write_req_t *)malloc(sizeof(write_req_t));
-	http_req_t request;
 	char defer = FALSE;
+	http_req_t request;
+	http_res_t response;
+	size_t len;
 
 	memset(req, 0, sizeof(write_req_t));
+	memset(&response, 0, sizeof(http_res_t));
 	req->free = TRUE;
 	
 	if (nread == -1) {
@@ -85,6 +71,7 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 		return;
 	}
 	
+	printf("parsing request:\n\n%s\n\n", buf.base);
 	request = parse_http_request(buf.base);
 
 	if (equal(request.method, "GET")) {
@@ -92,64 +79,98 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 
 		if (equal(request.url, "/")) {
 			if (file = (file_t *)map_get(files, "index.html")) {
-				req->buf.base = file->data;
-				req->buf.len = file->len;
-				req->free = FALSE;
+				char len_s[16];
+				response.data = file->data;
+				response.data_len = file->len;
+				itoa(file->len, len_s, 10);
+
+				map_set(&response.fields, "Content-Type", "text/html");
+				map_set(&response.fields, "Content-Length", len_s);
+				
+				req->buf.base = build_http_response(response, &len);
+				req->buf.len = len;
+
+				map_free(&response.fields);
 			}
 			else {
-				char * resp = "Hello libservurr!";
-				req->buf.base = (char *)malloc(sizeof(char) * strlen(resp));
-				req->buf.len = strlen(resp);
-				strcpy(req->buf.base, resp);
+				response.data = "Hello libservurr!";
+
+				req->buf.base = build_http_response(response, &len);
+				req->buf.len = len;
 			}
 		}
 		else if (file = (file_t *)map_get(files, request.url + 1)) {
-			req->buf.base = file->data;
-			req->buf.len = file->len;
-			req->free = FALSE;
+			char len_s[16];
+			response.data = file->data;
+			response.data_len = file->len;
+			itoa(file->len, len_s, 10);
+
+			map_set(&response.fields, "Content-Type", file->mime_type);
+			map_set(&response.fields, "Content-Length", len_s);
+			
+			req->buf.base = build_http_response(response, &len);
+			req->buf.len = len;
+
+			map_free(&response.fields);
 		}
 		else {
+			vurr_req_t * vurr_req = (vurr_req_t *)malloc(sizeof(*vurr_req));
 			vurr_res_t * res = (vurr_res_t *)malloc(sizeof(*res));
 			req_cb cb = (req_cb)map_get(routes, request.url);
-			memset(res, 0, sizeof(vurr_res_t));
+
+			memset(res, 0, sizeof(*res));
 			res->handle = client;
-			res->method = request.method;
-			res->url = request.url;
-			res->query = request.query;
+			res->req = vurr_req;
+			vurr_req->method = request.method;
+			vurr_req->url = request.url;
+			vurr_req->query = request.query;
+			vurr_req->fields = request.fields;
 
 			if (cb) {
-				cb(res);
+				printf("[%s] calling request callback", request.url);
+				cb(vurr_req, res);
 				if (!(defer = res->defer)) {
 					if (res->data) {
-						if (res->len == 0) {
-							req->buf.len = strlen(res->data);
-							req->buf.base = (char *)malloc(sizeof(char) * req->buf.len);
-							strcpy(req->buf.base, res->data);
-						}
-						else {
-							req->buf.len = res->len;
-							req->buf.base = res->data;
+						response.data = res->data;
+						response.data_len = res->len;
+						response.fields = res->fields;
+						
+						req->buf.base = build_http_response(response, &len);
+						req->buf.len = len;
+
+						map_free(&response.fields);
+						if (res->len != 0) {
+							free(res->data);
 						}
 					}
 					else {
 						uv_close((uv_handle_t *)client, NULL);
 					}
+					free(vurr_req);
 					free(res);
 				}
 			}
 			else {
 				req_cb wc_cb = (req_cb)map_get(routes, "*");
 				if (wc_cb) {
-					wc_cb(res);
+					wc_cb(vurr_req, res);
 					if (res->data) {
-						req->buf.base = res->data;
-						req->buf.len = res->len;
-						req->free = FALSE;
+						response.data = res->data;
+						response.data_len = res->len;
+						response.fields = res->fields;
+
+						req->buf.base = build_http_response(response, &len);
+						req->buf.len = len;
+						
+						if (res->len != 0) {
+							free(res->data);
+						}
 					}
 					else {
 						uv_close((uv_handle_t *)client, NULL);
 					}
 				}
+				free(vurr_req);
 				free(res);
 			}
 		}
@@ -158,8 +179,12 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 			uv_write((uv_write_t *)req, client, &req->buf, 1, write_done);
 		}
 		else {
+			puts("deferred response");
 			free(req);
 		}
+	}
+	else if (equal(request.method, "POST")) {
+
 	}
 	else {
 		uv_close((uv_handle_t *)client, NULL);
@@ -167,7 +192,8 @@ static void read(uv_stream_t * client, ssize_t nread, uv_buf_t buf) {
 	
 	if (!defer) {
 		free(request.method); // Start of buf.base copy
-	}
+	}		
+	map_free(&request.fields);
 	free(buf.base);
 }
 
@@ -197,78 +223,81 @@ static void on_event(uv_async_t * async, int status) {
 	free(ev);
 }
 
-static int build_file(file_t * fileinfo, char * head, size_t file_size) {
-	fileinfo->len = sizeof(char) * strlen(head) + file_size;
-	fileinfo->data = (char *)malloc(fileinfo->len);
-	strcpy(fileinfo->data, head);
-
-	return strlen(head);
-}
-
 void vurr_static(char * path) {
-	uv_tcp_t server;
-	struct sockaddr_in bind_addr;
-	uv_thread_t spotify_thread;
-	uv_thread_t vurr_thread;
-	uv_timer_t timer;
 	char * file, * filename;
 	int file_size, i;
-	size_t len;
 	list dir_files;
 
 	dir_files = ls(path);
-	printf("%d files:\n", dir_files.len);
+	
 	for (i = 0; i < dir_files.len; i++) {
 		file_t * fileinfo = (file_t *)malloc(sizeof(file_t));
 		int offset;
 
-		printf("%s\n", dir_files.items[i]);
-		
-		file = readfile_size(dir_files.items[i], &file_size);
-		filename = without_path(dir_files.items[i]);
-		len = strlen(filename);
+		filename = without_path(dir_files.items[i]);		
+		fileinfo->data = readfile_size(dir_files.items[i], &file_size);
+		fileinfo->len = file_size;
 		
 		if (ends_with(filename, ".html")) {
-			offset = build_file(fileinfo, header, file_size);
+			strcpy(fileinfo->mime_type, "text/html");
 		}
 		else if (ends_with(filename, ".css")) {
-			offset = build_file(fileinfo, headerCSS, file_size);
+			strcpy(fileinfo->mime_type, "text/css");
 		}
 		else if (ends_with(filename, ".js")) {
-			offset = build_file(fileinfo, headerJS, file_size);
+			strcpy(fileinfo->mime_type, "text/javascript");
 		}
 		else if (ends_with(filename, ".png")) {
-			offset = build_file(fileinfo, headerPNG, file_size);
+			strcpy(fileinfo->mime_type, "image/png");
 		}
 		else if (ends_with(filename, ".jpg")) {
-			offset = build_file(fileinfo, headerJPEG, file_size);
+			strcpy(fileinfo->mime_type, "image/jpeg");
 		}
 		else if (ends_with(filename, ".woff")) {
-			offset = build_file(fileinfo, headerWOFF, file_size);
+			strcpy(fileinfo->mime_type, "application/font-woff");
 		}
 		else {
-			offset = build_file(fileinfo, headerPlain, file_size);
+			strcpy(fileinfo->mime_type, "text/plain");
 		}
-
-		memcpy(fileinfo->data + offset, file, file_size);
 		map_set(&files, filename, fileinfo);
-
-		free(file);
 	}
 }
 
 void vurr_write(vurr_res_t * res) {
 	if (res->data) {
 		write_req_t * req = (write_req_t *)malloc(sizeof(write_req_t));
-	
+		http_res_t response;
+		size_t len;
+		char len_s[16];
+		if (!res) puts("res == NULL");
+		itoa(res->len, len_s, 10);
+		vurr_res_set(res, "Content-Length", len_s);
+		printf("[%s] Content-Length: %s\n", res->req->url, len_s);
+
+		response.data = res->data;
+		response.data_len = res->len;
+		response.fields = res->fields;
+		req->buf.base = build_http_response(response, &len);
+		req->buf.len = len;
 		req->req.handle = (uv_stream_t *)res->handle;
-		req->buf.base = res->data;
-		req->buf.len = res->len;
 		req->free = TRUE;
 
-		free(res->method);
-		free(res);
+		printf("[%s] vurr_write nullchecks", res->req->url);
+		if (!req->req.handle) puts("req.handle == NULL");
+		if (!res->req) puts("res->req == NULL");
+		if (!res->req->method) puts("res->req->method == NULL");
+		if (!res) puts("res == NULL");
 
+		printf("[%s] response size: %d\n", res->req->url, len);
+		
+		free(res->req->method);
+		free(res->req);
+		free(res->data);
+		free(res);
+		map_free(&response.fields);
+
+		puts("calling uv_write");
+		
 		uv_write((uv_write_t *)req, req->req.handle, &req->buf, 1, write_done);
 	}
 	else {
@@ -277,6 +306,10 @@ void vurr_write(vurr_res_t * res) {
 }
 
 void vurr_get(char * url, req_cb cb) {
+	map_set(&routes, url, cb);
+}
+
+void vurr_post(char * url, req_cb cb) {
 	map_set(&routes, url, cb);
 }
 
@@ -293,6 +326,14 @@ void vurr_do(char * e, void * data) {
 		async.data = event_data;
 		uv_async_send(&async);
 	}
+}
+
+void vurr_res_set(vurr_res_t * res, char * key, char * value) {
+	map_set(&res->fields, key, value);
+}
+
+uv_loop_t * vurr_loop() {
+	return loop;
 }
 
 void vurr_run(int port) {
